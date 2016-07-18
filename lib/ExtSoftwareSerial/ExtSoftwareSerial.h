@@ -1,7 +1,7 @@
 /*
-SoftwareSerial.h
+ExtSoftwareSerial.h
 
-SoftwareSerial.cpp - Implementation of the Arduino software serial for ESP8266.
+ExtSoftwareSerial.cpp - Implementation of the Arduino software serial for ESP8266.
 Copyright (c) 2015-2016 Peter Lerup. All rights reserved.
 
 This library is free software; you can redistribute it and/or
@@ -20,8 +20,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 */
 
-#ifndef SoftwareSerial_h
-#define SoftwareSerial_h
+#ifndef ExtSoftwareSerial_h
+#define ExtSoftwareSerial_h
 
 #include <inttypes.h>
 #include <Stream.h>
@@ -32,19 +32,20 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 // Speed up to 115200 can be used.
 
 
-class SoftwareSerial : public Stream
+class ExtSoftwareSerial : public Stream
 {
 public:
-   SoftwareSerial(int receivePin, int transmitPin, bool inverse_logic = false, unsigned int buffSize = 64);
-   ~SoftwareSerial();
+   ExtSoftwareSerial(int receivePin, int transmitPin, bool inverse_logic = false, unsigned int buffSize = 64);
+   ~ExtSoftwareSerial();
 
-   void begin(long speed);
+   void begin(long speed, uint8_t bitlength_rx = 8, uint8_t bitlength_tx = 8, bool manchester = false);
    long baudRate();
    void setTransmitEnablePin(int transmitEnablePin);
 
 
    int peek();
 
+   virtual size_t write(uint16_t byte);
    virtual size_t write(uint8_t byte);
    virtual int read();
    virtual int available();
@@ -64,6 +65,9 @@ private:
    // Member variables
    int m_rxPin, m_txPin, m_txEnablePin;
    bool m_rxValid, m_txValid, m_txEnableValid;
+   bool m_manchester;
+   uint8_t m_bitlength_rx;
+   uint8_t m_bitlength_tx;
    bool m_invert;
    unsigned long m_bitTime;
    unsigned int m_inPos, m_outPos;

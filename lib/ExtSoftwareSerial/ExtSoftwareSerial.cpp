@@ -1,6 +1,6 @@
 /*
 
-SoftwareSerial.cpp - Implementation of the Arduino software serial for ESP8266.
+ExtSoftwareSerial.cpp - Implementation of the Arduino software serial for ESP8266.
 Copyright (c) 2015-2016 Peter Lerup. All rights reserved.
 
 This library is free software; you can redistribute it and/or
@@ -33,7 +33,7 @@ extern "C" {
 
 // As the Arduino attachInterrupt has no parameter, lists of objects
 // and callbacks corresponding to each possible GPIO pins have to be defined
-SoftwareSerial *ObjList[MAX_PIN+1];
+ExtSoftwareSerial *ObjList[MAX_PIN+1];
 
 void ICACHE_RAM_ATTR sws_isr_0() { ObjList[0]->rxRead(); };
 void ICACHE_RAM_ATTR sws_isr_1() { ObjList[1]->rxRead(); };
@@ -66,7 +66,7 @@ static void (*ISRList[MAX_PIN+1])() = {
       sws_isr_15
 };
 
-SoftwareSerial::SoftwareSerial(int receivePin, int transmitPin, bool inverse_logic, unsigned int buffSize) {
+ExtSoftwareSerial::ExtSoftwareSerial(int receivePin, int transmitPin, bool inverse_logic, unsigned int buffSize) {
    m_rxValid = m_txValid = m_txEnableValid = false;
    m_buffer = NULL;
    m_invert = inverse_logic;
@@ -92,7 +92,7 @@ SoftwareSerial::SoftwareSerial(int receivePin, int transmitPin, bool inverse_log
    begin(9600);
 }
 
-SoftwareSerial::~SoftwareSerial() {
+ExtSoftwareSerial::~ExtSoftwareSerial() {
    enableRx(false);
    if (m_rxValid)
       ObjList[m_rxPin] = NULL;
@@ -100,22 +100,31 @@ SoftwareSerial::~SoftwareSerial() {
       free(m_buffer);
 }
 
-bool SoftwareSerial::isValidGPIOpin(int pin) {
+bool ExtSoftwareSerial::isValidGPIOpin(int pin) {
    return (pin >= 0 && pin <= 5) || (pin >= 12 && pin <= MAX_PIN);
 }
 
-void SoftwareSerial::begin(long speed) {
+void ExtSoftwareSerial::begin(long speed, uint8_t bitlength_rx, uint8_t bitlength_tx, bool manchester) {
    // Use getCycleCount() loop to get as exact timing as possible
    m_bitTime = ESP.getCpuFreqMHz()*1000000/speed;
+   m_manchester = manchester;
+   if(bitlength_rx > 7 && bitlength_rx < 17)
+      m_bitlength_rx = bitlength_rx;
+   else
+      m_bitlength_rx = 8;
+   if(bitlength_tx > 7 && bitlength_tx < 17)
+      m_bitlength_tx = bitlength_tx;
+   else
+      m_bitlength_tx = 8;
 }
 
-long SoftwareSerial::baudRate() {
+long ExtSoftwareSerial::baudRate() {
    // Use getCycleCount() loop to get as exact timing as possible
   long speed = ESP.getCpuFreqMHz()*1000000/m_bitTime;
    return speed;
 }
 
-void SoftwareSerial::setTransmitEnablePin(int transmitEnablePin) {
+void ExtSoftwareSerial::setTransmitEnablePin(int transmitEnablePin) {
   if (isValidGPIOpin(transmitEnablePin)) {
      m_txEnableValid = true;
      m_txEnablePin = transmitEnablePin;
@@ -126,7 +135,7 @@ void SoftwareSerial::setTransmitEnablePin(int transmitEnablePin) {
   }
 }
 
-void SoftwareSerial::enableRx(bool on) {
+void ExtSoftwareSerial::enableRx(bool on) {
    if (m_rxValid) {
       if (on)
          attachInterrupt(m_rxPin, ISRList[m_rxPin], m_invert ? RISING : FALLING);
@@ -135,14 +144,14 @@ void SoftwareSerial::enableRx(bool on) {
    }
 }
 
-int SoftwareSerial::read() {
+int ExtSoftwareSerial::read() {
    if (!m_rxValid || (m_inPos == m_outPos)) return -1;
    uint8_t ch = m_buffer[m_outPos];
    m_outPos = (m_outPos+1) % m_buffSize;
    return ch;
 }
 
-int SoftwareSerial::available() {
+int ExtSoftwareSerial::available() {
    if (!m_rxValid) return 0;
    int avail = m_inPos - m_outPos;
    if (avail < 0) avail += m_buffSize;
@@ -151,7 +160,11 @@ int SoftwareSerial::available() {
 
 #define WAIT { while (ESP.getCycleCount()-start < wait); wait += m_bitTime; }
 
-size_t SoftwareSerial::write(uint8_t b) {
+size_t ExtSoftwareSerial::write(uint8_t b) {
+   write((uint16_t) b);
+}
+
+size_t ExtSoftwareSerial::write(uint16_t b) {
    if (!m_txValid) return 0;
 
    if (m_invert) b = ~b;
@@ -164,7 +177,7 @@ size_t SoftwareSerial::write(uint8_t b) {
     // Start bit;
    digitalWrite(m_txPin, LOW);
    WAIT;
-   for (int i = 0; i < 8; i++) {
+   for (int i = 0; i < m_bitlength_tx; i++) {
      digitalWrite(m_txPin, (b & 1) ? HIGH : LOW);
      WAIT;
      b >>= 1;
@@ -177,22 +190,22 @@ size_t SoftwareSerial::write(uint8_t b) {
    return 1;
 }
 
-void SoftwareSerial::flush() {
+void ExtSoftwareSerial::flush() {
    m_inPos = m_outPos = 0;
 }
 
-int SoftwareSerial::peek() {
+int ExtSoftwareSerial::peek() {
    if (!m_rxValid || (m_inPos == m_outPos)) return -1;
    return m_buffer[m_outPos];
 }
 
-void ICACHE_RAM_ATTR SoftwareSerial::rxRead() {
+void ICACHE_RAM_ATTR ExtSoftwareSerial::rxRead() {
    // Advance the starting point for the samples but compensate for the
    // initial delay which occurs before the interrupt is delivered
    unsigned long wait = m_bitTime + m_bitTime/3 - 500;
    unsigned long start = ESP.getCycleCount();
    uint8_t rec = 0;
-   for (int i = 0; i < 8; i++) {
+   for (int i = 0; i < m_bitlength_rx; i++) {
      WAIT;
      rec >>= 1;
      if (digitalRead(m_rxPin))
