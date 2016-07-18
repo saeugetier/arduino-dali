@@ -27,7 +27,7 @@ extern "C" {
 #include "gpio.h"
 }
 
-#include <SoftwareSerial.h>
+#include <ExtSoftwareSerial.h>
 
 #define MAX_PIN 15
 
