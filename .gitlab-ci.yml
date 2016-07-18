@@ -1,0 +1,8 @@
+before_script:
+  - pip install --user platformio
+
+build:
+  script:
+    - /home/gitlab-runner/.local/bin/pio run
+
+
