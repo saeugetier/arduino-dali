@@ -106,7 +106,14 @@ bool ExtSoftwareSerial::isValidGPIOpin(int pin) {
 
 void ExtSoftwareSerial::begin(long speed, uint8_t bitlength_rx, uint8_t bitlength_tx, bool manchester) {
    // Use getCycleCount() loop to get as exact timing as possible
-   m_bitTime = ESP.getCpuFreqMHz()*1000000/speed;
+   if(manchester)
+   {
+     m_bitTime = ESP.getCpuFreqMHz()*500000/speed;
+   }
+   else
+   {
+     m_bitTime = ESP.getCpuFreqMHz()*1000000/speed;
+   }
    m_manchester = manchester;
    if(bitlength_rx > 7 && bitlength_rx < 17)
       m_bitlength_rx = bitlength_rx;
@@ -121,6 +128,10 @@ void ExtSoftwareSerial::begin(long speed, uint8_t bitlength_rx, uint8_t bitlengt
 long ExtSoftwareSerial::baudRate() {
    // Use getCycleCount() loop to get as exact timing as possible
   long speed = ESP.getCpuFreqMHz()*1000000/m_bitTime;
+  if(m_manchester)
+  {
+    speed = speed / 2;
+  }
    return speed;
 }
 
@@ -164,10 +175,10 @@ size_t ExtSoftwareSerial::write(uint8_t b) {
    write((uint16_t) b);
 }
 
-size_t ExtSoftwareSerial::write(uint16_t b) {
+size_t ExtSoftwareSerial::write(uint16_t w) {
    if (!m_txValid) return 0;
 
-   if (m_invert) b = ~b;
+   if (m_invert) w = ~w;
    // Disable interrupts in order to get a clean transmit
    cli();
    if (m_txEnableValid) digitalWrite(m_txEnablePin, HIGH);
@@ -175,13 +186,36 @@ size_t ExtSoftwareSerial::write(uint16_t b) {
    digitalWrite(m_txPin, HIGH);
    unsigned long start = ESP.getCycleCount();
     // Start bit;
-   digitalWrite(m_txPin, LOW);
-   WAIT;
-   for (int i = 0; i < m_bitlength_tx; i++) {
-     digitalWrite(m_txPin, (b & 1) ? HIGH : LOW);
-     WAIT;
-     b >>= 1;
-   }
+    if(m_manchester)
+    {
+      uint32_t buffer = 0;
+      digitalWrite(m_txPin, LOW);
+      for(int i = 0; i < m_bitlength_tx; i++)
+    	{
+    		buffer <<= 2;
+    		buffer |= (w & 0x01) ? 0x02 : 0x01;
+    		w >>= 1;
+    	}
+      WAIT;
+      digitalWrite(m_txPin, HIGH);
+      WAIT;
+      for (int i = 0; i < m_bitlength_tx * 2; i++) {
+        digitalWrite(m_txPin, (buffer & 1) ? HIGH : LOW);
+        WAIT;
+        buffer >>= 1;
+      }
+    }
+    else
+    {
+      digitalWrite(m_txPin, LOW);
+      WAIT;
+      for (int i = 0; i < m_bitlength_tx; i++) {
+        digitalWrite(m_txPin, (w & 1) ? HIGH : LOW);
+        WAIT;
+        w >>= 1;
+      }
+    }
+
    // Stop bit
    digitalWrite(m_txPin, HIGH);
    WAIT;
@@ -224,5 +258,3 @@ void ICACHE_RAM_ATTR ExtSoftwareSerial::rxRead() {
    // it gets set even when interrupts are disabled
    GPIO_REG_WRITE(GPIO_STATUS_W1TC_ADDRESS, 1 << m_rxPin);
 }
-
-

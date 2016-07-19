@@ -45,7 +45,7 @@ public:
 
    int peek();
 
-   virtual size_t write(uint16_t byte);
+   virtual size_t write(uint16_t word);
    virtual size_t write(uint8_t byte);
    virtual int read();
    virtual int available();

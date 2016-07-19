@@ -15,12 +15,21 @@
 
 #include <ESP8266mDNS.h>
 
-#include <DNSServer.h>
+#include <aREST.h>
+#include <aREST_UI.h>
+
+//#include <DNSServer.h>
 
 //define your default values here, if there are different values in config.json, they are overwritten.
-char mqtt_server[40];
+char mqtt_server[64 ];
 char mqtt_port[6] = "8080";
 char blynk_token[34] = "YOUR_BLYNK_TOKEN";
+
+ESP8266WebServer  webServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
+//DNSServer         dnsServer;
+
+aREST_UI rest = aREST_UI();
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -93,7 +102,7 @@ void setup() {
   wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   //set static ip
-  wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+  //wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
   //add all your parameters here
   wifiManager.addParameter(&custom_mqtt_server);
@@ -155,10 +164,39 @@ void setup() {
   Serial.println("local ip");
   Serial.println(WiFi.localIP());
 
+  httpUpdater.setup(&webServer);
+
+
+  MDNS.begin("esp.local");
+  webServer.onNotFound([]() {
+    WiFiClient client = webServer.client();
+    Serial.println("start handle");
+    rest.handle(client);
+    Serial.println("end handle");
+  });
+
+  rest.function("led",ledControl);
+
+  // Give name and ID to device
+  rest.set_id("1");
+  rest.set_name("esp8266");
+
+  webServer.begin();
+
+  MDNS.addService("http", "tcp", 80);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
+  webServer.handleClient();
+}
 
+int ledControl(String command) {
 
+  Serial.println(command);
+
+  // Get state from command
+  int state = command.toInt();
+
+  return 1;
 }
