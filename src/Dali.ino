@@ -18,6 +18,8 @@
 #include <aREST.h>
 #include <aREST_UI.h>
 
+#include "Dali.h"
+
 //#include <DNSServer.h>
 
 //define your default values here, if there are different values in config.json, they are overwritten.

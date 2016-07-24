@@ -1,4 +1,4 @@
-#include "dali/dali_encode.h"
+#include "dali_encode.h"
 
 typedef struct command_mode_map
 {
