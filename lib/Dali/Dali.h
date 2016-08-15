@@ -2,17 +2,18 @@
 #include <ExtSoftwareSerial.h>
 #include <dali_codes.h>
 #include <dali_encode.h>
+#include <Interpreter.h>
 
-#define _ERR_NO_ANSWER_ -100
-#define _ERR_INVALID_FRAME_ -101
-
-#define INVALID_FRAME 0x8080
+#define ACK 0x7FFF
+#define NACK -1
+#define RESULT 0x8000
 
 class Dali
 {
 public:
   Dali(uint8_t rx_pin, uint8_t tx_pin, uint8_t tx_en_pin);
   int sendDirect(address_mode mode, uint8_t address, uint8_t brightness);
+  int parse_execute(const char* string);
   ~Dali();
 protected:
   ExtSoftwareSerial extSerial;

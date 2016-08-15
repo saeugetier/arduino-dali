@@ -15,26 +15,62 @@
 
 #include <ESP8266mDNS.h>
 
-#include <aREST.h>
-#include <aREST_UI.h>
+#include <Hash.h>
+#include <PubSubClient.h>
 
 #include "Dali.h"
+
+#include <ArduinoOTA.h>
 
 //#include <DNSServer.h>
 
 //define your default values here, if there are different values in config.json, they are overwritten.
-char mqtt_server[64 ];
-char mqtt_port[6] = "8080";
-char blynk_token[34] = "YOUR_BLYNK_TOKEN";
+char node_name[64] = "dali";
+char mqtt_server[64] = "home.local";
+char mqtt_port[6] = "1883";
 
+
+//ESP MQTT
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
+//Webserver
 ESP8266WebServer  webServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 //DNSServer         dnsServer;
 
-aREST_UI rest = aREST_UI();
-
 //flag for saving data
 bool shouldSaveConfig = false;
+
+Dali dali(8,9,10);
+
+void mqtt_callback(char* topic, byte* payload, unsigned int length)
+{
+  char buffer[64];
+  char ans_string[64];
+  sprintf(buffer, "%s/result", node_name);
+  Serial.println("Callback");
+
+  Serial.println((const char*)payload);
+
+  int result = dali.parse_execute((const char*) payload);
+
+  if(result == ACK)
+  {
+      mqttClient.publish(buffer, "ACK");
+  }
+  else if(result | RESULT)
+  {
+    sprintf(ans_string, "ANS: %d", result & 0xFF);
+      mqttClient.publish(buffer, ans_string);
+  }
+  else
+  {
+      mqttClient.publish(buffer, "NACK");
+  }
+
+
+}
 
 //callback notifying us of the need to save config
 void saveConfigCallback () {
@@ -42,6 +78,25 @@ void saveConfigCallback () {
   shouldSaveConfig = true;
 }
 
+void reset_wifi_settings()
+{
+  webServer.send(200, "text/plain", "Restoring factory settings");
+
+  SPIFFS.remove("/config.json");
+  WiFiManager wifiManager;
+
+  wifiManager.resetSettings();
+
+  delay(3000);
+
+  ESP.reset();
+
+  delay(5000);
+}
+
+void handleRoot() {
+  webServer.send(200, "text/html", "<html> <p><a title=\"Reset settings to factory defaults\" href=\"reset_settings\">Reset settings to factory defaults </a></p> <p><a title=\"Reset settings to factory defaults\" href=\"update\">Update firmware </a></p></html>");
+}
 
 void setup() {
   // put your setup code here, to run once:
@@ -73,9 +128,9 @@ void setup() {
         if (json.success()) {
           Serial.println("\nparsed json");
 
+          strcpy(node_name, json["node_name"]);
           strcpy(mqtt_server, json["mqtt_server"]);
           strcpy(mqtt_port, json["mqtt_port"]);
-          strcpy(blynk_token, json["blynk_token"]);
 
         } else {
           Serial.println("failed to load json config");
@@ -92,9 +147,9 @@ void setup() {
   // The extra parameters to be configured (can be either global or just in the setup)
   // After connecting, parameter.getValue() will get you the configured value
   // id/name placeholder/prompt default length
+  WiFiManagerParameter custom_node_name("name", "node name", node_name, 40);
   WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
-  WiFiManagerParameter custom_blynk_token("blynk", "blynk token", blynk_token, 32);
 
   //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
@@ -107,9 +162,9 @@ void setup() {
   //wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
   //add all your parameters here
+  wifiManager.addParameter(&custom_node_name);
   wifiManager.addParameter(&custom_mqtt_server);
   wifiManager.addParameter(&custom_mqtt_port);
-  wifiManager.addParameter(&custom_blynk_token);
 
   //reset settings - for testing
   //wifiManager.resetSettings();
@@ -127,7 +182,7 @@ void setup() {
   //if it does not connect it starts an access point with the specified name
   //here  "AutoConnectAP"
   //and goes into a blocking loop awaiting configuration
-  if (!wifiManager.autoConnect("AutoConnectAP", "password")) {
+  if (!wifiManager.autoConnect("DaliMasterSettings", "password")) {
     Serial.println("failed to connect and hit timeout");
     delay(3000);
     //reset and try again, or maybe put it to deep sleep
@@ -139,9 +194,20 @@ void setup() {
   Serial.println("connected...yeey :)");
 
   //read updated parameters
+  strcpy(node_name, custom_node_name.getValue());
   strcpy(mqtt_server, custom_mqtt_server.getValue());
   strcpy(mqtt_port, custom_mqtt_port.getValue());
-  strcpy(blynk_token, custom_blynk_token.getValue());
+
+  for(int i =  0; i < 6 ; i++)
+  {
+    if(*(i + mqtt_port) == 0)
+      break;
+    else if((*(i + mqtt_port) < '0') || (*(i + mqtt_port) > '9') )
+    {
+      strcpy(mqtt_port, "1883");
+      break;
+    }
+  }
 
   //save the custom parameters to FS
   if (shouldSaveConfig) {
@@ -150,7 +216,7 @@ void setup() {
     JsonObject& json = jsonBuffer.createObject();
     json["mqtt_server"] = mqtt_server;
     json["mqtt_port"] = mqtt_port;
-    json["blynk_token"] = blynk_token;
+    json["node_name"] = node_name;
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
@@ -166,39 +232,55 @@ void setup() {
   Serial.println("local ip");
   Serial.println(WiFi.localIP());
 
+  ArduinoOTA.begin();
+
   httpUpdater.setup(&webServer);
+  //mqttClient.setServer(mqtt_server, atoi(mqtt_port));
+  mqttClient.setServer("192.168.0.2", 1883);
+  mqttClient.setCallback(mqtt_callback);
 
+  char buffer[64];
+  sprintf(buffer, "%s.local", node_name);
+  Serial.print("DNS name: ");
+  Serial.println(buffer);
+  MDNS.begin(node_name);
 
-  MDNS.begin("esp.local");
-  webServer.onNotFound([]() {
-    WiFiClient client = webServer.client();
-    Serial.println("start handle");
-    rest.handle(client);
-    Serial.println("end handle");
-  });
-
-  rest.function("led",ledControl);
-
-  // Give name and ID to device
-  rest.set_id("1");
-  rest.set_name("esp8266");
+  webServer.on("/reset_settings", reset_wifi_settings);
+  webServer.on("/", handleRoot);
 
   webServer.begin();
 
   MDNS.addService("http", "tcp", 80);
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
-  webServer.handleClient();
+void mqtt_reconnect()
+{
+  Serial.println("Reconnect MQTT");
+  char buffer[64];
+
+  if(mqttClient.connect(node_name))
+  {
+    Serial.println("MQTT connected");
+
+    sprintf(buffer, "%s/light", node_name);
+    mqttClient.subscribe(buffer);
+  }
+  else
+  {
+    Serial.println("MQTT not connected");
+  }
+
+
+  sprintf(buffer, "MQTT state is: %d", mqttClient.state());
+  Serial.println(buffer);
 }
 
-int ledControl(String command) {
 
-  Serial.println(command);
-
-  // Get state from command
-  int state = command.toInt();
-
-  return 1;
+void loop() {
+  if (!mqttClient.connected()) {
+    mqtt_reconnect();
+  }
+  mqttClient.loop();
+  ArduinoOTA.handle();
+  webServer.handleClient();
 }
