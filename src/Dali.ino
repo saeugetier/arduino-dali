@@ -35,7 +35,7 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 
 //Webserver
-ESP8266WebServer  webServer(80);
+ESP8266WebServer webServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
 //DNSServer         dnsServer;
 
@@ -46,241 +46,249 @@ Dali dali(8,9,10);
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length)
 {
-  char buffer[64];
-  char ans_string[64];
-  sprintf(buffer, "%s/result", node_name);
-  Serial.println("Callback");
+        char buffer[64];
+        char ans_string[128] =  {0};
+        memcpy(ans_string, payload, length);
+        sprintf(buffer, "%s/result", node_name);
+        Serial.println("Callback");
 
-  Serial.println((const char*)payload);
+        payload[length] = 0;
 
-  int result = dali.parse_execute((const char*) payload);
+        Serial.println((const char*)payload);
 
-  if(result == ACK)
-  {
-      mqttClient.publish(buffer, "ACK");
-  }
-  else if(result | RESULT)
-  {
-    sprintf(ans_string, "ANS: %d", result & 0xFF);
-      mqttClient.publish(buffer, ans_string);
-  }
-  else
-  {
-      mqttClient.publish(buffer, "NACK");
-  }
+        int result = dali.parse_execute((const char*) ans_string);
+
+        if(result == ACK)
+        {
+                mqttClient.publish(buffer, "ACK");
+        }
+        else if(result == NACK)
+        {
+                mqttClient.publish(buffer, "NACK");
+        }
+        else if((result & 0xFF00) == RESULT)
+        {
+                sprintf(ans_string, "ANS: %d", result & 0xFF);
+                mqttClient.publish(buffer, ans_string);
+        }
+        else
+        {
+            mqttClient.publish(buffer, "FATAL ERROR");
+        }
+
 
 
 }
 
 //callback notifying us of the need to save config
 void saveConfigCallback () {
-  Serial.println("Should save config");
-  shouldSaveConfig = true;
+        Serial.println("Should save config");
+        shouldSaveConfig = true;
 }
 
 void reset_wifi_settings()
 {
-  webServer.send(200, "text/plain", "Restoring factory settings");
+        webServer.send(200, "text/plain", "Restoring factory settings");
 
-  SPIFFS.remove("/config.json");
-  WiFiManager wifiManager;
+        SPIFFS.remove("/config.json");
+        WiFiManager wifiManager;
 
-  wifiManager.resetSettings();
+        wifiManager.resetSettings();
 
-  delay(3000);
+        delay(3000);
 
-  ESP.reset();
+        ESP.reset();
 
-  delay(5000);
+        delay(5000);
 }
 
 void handleRoot() {
-  webServer.send(200, "text/html", "<html> <p><a title=\"Reset settings to factory defaults\" href=\"reset_settings\">Reset settings to factory defaults </a></p> <p><a title=\"Reset settings to factory defaults\" href=\"update\">Update firmware </a></p></html>");
+        webServer.send(200, "text/html", "<html> <p><a title=\"Reset settings to factory defaults\" href=\"reset_settings\">Reset settings to factory defaults </a></p> <p><a title=\"Reset settings to factory defaults\" href=\"update\">Update firmware </a></p></html>");
 }
 
 void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(115200);
-  Serial.println();
+        // put your setup code here, to run once:
+        Serial.begin(115200);
+        Serial.println();
 
-  //clean FS, for testing
-  //SPIFFS.format();
+        //clean FS, for testing
+        //SPIFFS.format();
 
-  //read configuration from FS json
-  Serial.println("mounting FS...");
+        //read configuration from FS json
+        Serial.println("mounting FS...");
 
-  if (SPIFFS.begin()) {
-    Serial.println("mounted file system");
-    if (SPIFFS.exists("/config.json")) {
-      //file exists, reading and loading
-      Serial.println("reading config file");
-      File configFile = SPIFFS.open("/config.json", "r");
-      if (configFile) {
-        Serial.println("opened config file");
-        size_t size = configFile.size();
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
+        if (SPIFFS.begin()) {
+                Serial.println("mounted file system");
+                if (SPIFFS.exists("/config.json")) {
+                        //file exists, reading and loading
+                        Serial.println("reading config file");
+                        File configFile = SPIFFS.open("/config.json", "r");
+                        if (configFile) {
+                                Serial.println("opened config file");
+                                size_t size = configFile.size();
+                                // Allocate a buffer to store contents of the file.
+                                std::unique_ptr<char[]> buf(new char[size]);
 
-        configFile.readBytes(buf.get(), size);
-        DynamicJsonBuffer jsonBuffer;
-        JsonObject& json = jsonBuffer.parseObject(buf.get());
-        json.printTo(Serial);
-        if (json.success()) {
-          Serial.println("\nparsed json");
+                                configFile.readBytes(buf.get(), size);
+                                DynamicJsonBuffer jsonBuffer;
+                                JsonObject& json = jsonBuffer.parseObject(buf.get());
+                                json.printTo(Serial);
+                                if (json.success()) {
+                                        Serial.println("\nparsed json");
 
-          strcpy(node_name, json["node_name"]);
-          strcpy(mqtt_server, json["mqtt_server"]);
-          strcpy(mqtt_port, json["mqtt_port"]);
+                                        strcpy(node_name, json["node_name"]);
+                                        strcpy(mqtt_server, json["mqtt_server"]);
+                                        strcpy(mqtt_port, json["mqtt_port"]);
 
+                                } else {
+                                        Serial.println("failed to load json config");
+                                }
+                        }
+                }
         } else {
-          Serial.println("failed to load json config");
+                Serial.println("failed to mount FS");
         }
-      }
-    }
-  } else {
-    Serial.println("failed to mount FS");
-  }
-  //end read
+        //end read
 
 
 
-  // The extra parameters to be configured (can be either global or just in the setup)
-  // After connecting, parameter.getValue() will get you the configured value
-  // id/name placeholder/prompt default length
-  WiFiManagerParameter custom_node_name("name", "node name", node_name, 40);
-  WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
-  WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
+        // The extra parameters to be configured (can be either global or just in the setup)
+        // After connecting, parameter.getValue() will get you the configured value
+        // id/name placeholder/prompt default length
+        WiFiManagerParameter custom_node_name("name", "node name", node_name, 40);
+        WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40);
+        WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
 
-  //WiFiManager
-  //Local intialization. Once its business is done, there is no need to keep it around
-  WiFiManager wifiManager;
+        //WiFiManager
+        //Local intialization. Once its business is done, there is no need to keep it around
+        WiFiManager wifiManager;
 
-  //set config save notify callback
-  wifiManager.setSaveConfigCallback(saveConfigCallback);
+        //set config save notify callback
+        wifiManager.setSaveConfigCallback(saveConfigCallback);
 
-  //set static ip
-  //wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+        //set static ip
+        //wifiManager.setSTAStaticIPConfig(IPAddress(10,0,1,99), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
-  //add all your parameters here
-  wifiManager.addParameter(&custom_node_name);
-  wifiManager.addParameter(&custom_mqtt_server);
-  wifiManager.addParameter(&custom_mqtt_port);
+        //add all your parameters here
+        wifiManager.addParameter(&custom_node_name);
+        wifiManager.addParameter(&custom_mqtt_server);
+        wifiManager.addParameter(&custom_mqtt_port);
 
-  //reset settings - for testing
-  //wifiManager.resetSettings();
+        //reset settings - for testing
+        //wifiManager.resetSettings();
 
-  //set minimu quality of signal so it ignores AP's under that quality
-  //defaults to 8%
-  //wifiManager.setMinimumSignalQuality();
+        //set minimu quality of signal so it ignores AP's under that quality
+        //defaults to 8%
+        //wifiManager.setMinimumSignalQuality();
 
-  //sets timeout until configuration portal gets turned off
-  //useful to make it all retry or go to sleep
-  //in seconds
-  //wifiManager.setTimeout(120);
+        //sets timeout until configuration portal gets turned off
+        //useful to make it all retry or go to sleep
+        //in seconds
+        //wifiManager.setTimeout(120);
 
-  //fetches ssid and pass and tries to connect
-  //if it does not connect it starts an access point with the specified name
-  //here  "AutoConnectAP"
-  //and goes into a blocking loop awaiting configuration
-  if (!wifiManager.autoConnect("DaliMasterSettings", "password")) {
-    Serial.println("failed to connect and hit timeout");
-    delay(3000);
-    //reset and try again, or maybe put it to deep sleep
-    ESP.reset();
-    delay(5000);
-  }
+        //fetches ssid and pass and tries to connect
+        //if it does not connect it starts an access point with the specified name
+        //here  "AutoConnectAP"
+        //and goes into a blocking loop awaiting configuration
+        if (!wifiManager.autoConnect("DaliMasterSettings", "password")) {
+                Serial.println("failed to connect and hit timeout");
+                delay(3000);
+                //reset and try again, or maybe put it to deep sleep
+                ESP.reset();
+                delay(5000);
+        }
 
-  //if you get here you have connected to the WiFi
-  Serial.println("connected...yeey :)");
+        //if you get here you have connected to the WiFi
+        Serial.println("connected...yeey :)");
 
-  //read updated parameters
-  strcpy(node_name, custom_node_name.getValue());
-  strcpy(mqtt_server, custom_mqtt_server.getValue());
-  strcpy(mqtt_port, custom_mqtt_port.getValue());
+        //read updated parameters
+        strcpy(node_name, custom_node_name.getValue());
+        strcpy(mqtt_server, custom_mqtt_server.getValue());
+        strcpy(mqtt_port, custom_mqtt_port.getValue());
 
-  for(int i =  0; i < 6 ; i++)
-  {
-    if(*(i + mqtt_port) == 0)
-      break;
-    else if((*(i + mqtt_port) < '0') || (*(i + mqtt_port) > '9') )
-    {
-      strcpy(mqtt_port, "1883");
-      break;
-    }
-  }
+        for(int i =  0; i < 6; i++)
+        {
+                if(*(i + mqtt_port) == 0)
+                        break;
+                else if((*(i + mqtt_port) < '0') || (*(i + mqtt_port) > '9') )
+                {
+                        strcpy(mqtt_port, "1883");
+                        break;
+                }
+        }
 
-  //save the custom parameters to FS
-  if (shouldSaveConfig) {
-    Serial.println("saving config");
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.createObject();
-    json["mqtt_server"] = mqtt_server;
-    json["mqtt_port"] = mqtt_port;
-    json["node_name"] = node_name;
+        //save the custom parameters to FS
+        if (shouldSaveConfig) {
+                Serial.println("saving config");
+                DynamicJsonBuffer jsonBuffer;
+                JsonObject& json = jsonBuffer.createObject();
+                json["mqtt_server"] = mqtt_server;
+                json["mqtt_port"] = mqtt_port;
+                json["node_name"] = node_name;
 
-    File configFile = SPIFFS.open("/config.json", "w");
-    if (!configFile) {
-      Serial.println("failed to open config file for writing");
-    }
+                File configFile = SPIFFS.open("/config.json", "w");
+                if (!configFile) {
+                        Serial.println("failed to open config file for writing");
+                }
 
-    json.printTo(Serial);
-    json.printTo(configFile);
-    configFile.close();
-    //end save
-  }
+                json.printTo(Serial);
+                json.printTo(configFile);
+                configFile.close();
+                //end save
+        }
 
-  Serial.println("local ip");
-  Serial.println(WiFi.localIP());
+        Serial.println("local ip");
+        Serial.println(WiFi.localIP());
 
-  ArduinoOTA.begin();
+        ArduinoOTA.begin();
 
-  httpUpdater.setup(&webServer);
-  //mqttClient.setServer(mqtt_server, atoi(mqtt_port));
-  mqttClient.setServer("192.168.0.2", 1883);
-  mqttClient.setCallback(mqtt_callback);
+        httpUpdater.setup(&webServer);
+        //mqttClient.setServer(mqtt_server, atoi(mqtt_port));
+        mqttClient.setServer("192.168.0.2", 1883);
+        mqttClient.setCallback(mqtt_callback);
 
-  char buffer[64];
-  sprintf(buffer, "%s.local", node_name);
-  Serial.print("DNS name: ");
-  Serial.println(buffer);
-  MDNS.begin(node_name);
+        char buffer[64];
+        sprintf(buffer, "%s.local", node_name);
+        Serial.print("DNS name: ");
+        Serial.println(buffer);
+        MDNS.begin(node_name);
 
-  webServer.on("/reset_settings", reset_wifi_settings);
-  webServer.on("/", handleRoot);
+        webServer.on("/reset_settings", reset_wifi_settings);
+        webServer.on("/", handleRoot);
 
-  webServer.begin();
+        webServer.begin();
 
-  MDNS.addService("http", "tcp", 80);
+        MDNS.addService("http", "tcp", 80);
 }
 
 void mqtt_reconnect()
 {
-  Serial.println("Reconnect MQTT");
-  char buffer[64];
+        Serial.println("Reconnect MQTT");
+        char buffer[64];
 
-  if(mqttClient.connect(node_name))
-  {
-    Serial.println("MQTT connected");
+        if(mqttClient.connect(node_name))
+        {
+                Serial.println("MQTT connected");
 
-    sprintf(buffer, "%s/light", node_name);
-    mqttClient.subscribe(buffer);
-  }
-  else
-  {
-    Serial.println("MQTT not connected");
-  }
+                sprintf(buffer, "%s/light", node_name);
+                mqttClient.subscribe(buffer);
+        }
+        else
+        {
+                Serial.println("MQTT not connected");
+        }
 
 
-  sprintf(buffer, "MQTT state is: %d", mqttClient.state());
-  Serial.println(buffer);
+        sprintf(buffer, "MQTT state is: %d", mqttClient.state());
+        Serial.println(buffer);
 }
 
 
 void loop() {
-  if (!mqttClient.connected()) {
-    mqtt_reconnect();
-  }
-  mqttClient.loop();
-  ArduinoOTA.handle();
-  webServer.handleClient();
+        if (!mqttClient.connected()) {
+                mqtt_reconnect();
+        }
+        mqttClient.loop();
+        ArduinoOTA.handle();
+        webServer.handleClient();
 }

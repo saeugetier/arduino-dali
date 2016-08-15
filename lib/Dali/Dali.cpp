@@ -33,16 +33,20 @@ int Dali::parse_execute(const char* string)
                         if(_ERR_OK_ == send(frame))
                                 result = ACK;
                         else
+                        {
                                 result = _ERR_PARSE_ERROR_;
                                 Serial.println("Parser error");
+                        }
                 }
                 else if(_MODE_REPEAT_TWICE_ == ret)
                 {
                         if(_ERR_OK_ == send_with_repeat(frame))
                                 result = ACK;
                         else
+                        {
                                 result = _ERR_PARSE_ERROR_;
                                 Serial.println("Parser error");
+                        }
                 }
                 else if(_MODE_QUERY_ == ret)
                 {
@@ -53,7 +57,7 @@ int Dali::parse_execute(const char* string)
                         }
                         else
                                 result = _ERR_PARSE_ERROR_;
-                                Serial.println("Parser error");
+                        Serial.println("Parser error");
                 }
                 else if(ret != _ERR_NACK && ret != _ERR_ACK)
                         result = _ERR_UNIMPLEMENTED_;
