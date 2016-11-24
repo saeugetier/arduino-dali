@@ -3,7 +3,7 @@
 #include <ESP8266WiFi.h>          //https://github.com/esp8266/Arduino
 
 //needed for library
-#include <DNSServer.h>
+//#include <DNSServer.h>
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 
@@ -22,8 +22,6 @@
 
 #include <ArduinoOTA.h>
 
-//#include <DNSServer.h>
-
 //define your default values here, if there are different values in config.json, they are overwritten.
 char node_name[64] = "dali";
 char mqtt_server[64] = "home.local";
@@ -36,13 +34,58 @@ PubSubClient mqttClient(espClient);
 
 //Webserver
 ESP8266WebServer webServer(80);
-ESP8266HTTPUpdateServer httpUpdater;
 //DNSServer         dnsServer;
 
 //flag for saving data
 bool shouldSaveConfig = false;
 
-Dali dali(8,9,10);
+Dali dali(13,15,14);
+
+String formatBytes(size_t bytes){
+  if (bytes < 1024){
+    return String(bytes)+"B";
+  } else if(bytes < (1024 * 1024)){
+    return String(bytes/1024.0)+"KB";
+  } else if(bytes < (1024 * 1024 * 1024)){
+    return String(bytes/1024.0/1024.0)+"MB";
+  } else {
+    return String(bytes/1024.0/1024.0/1024.0)+"GB";
+  }
+}
+
+String getContentType(String filename){
+  if(webServer.hasArg("download")) return "application/octet-stream";
+  else if(filename.endsWith(".htm")) return "text/html";
+  else if(filename.endsWith(".html")) return "text/html";
+  else if(filename.endsWith(".css")) return "text/css";
+  else if(filename.endsWith(".js")) return "application/javascript";
+  else if(filename.endsWith(".png")) return "image/png";
+  else if(filename.endsWith(".gif")) return "image/gif";
+  else if(filename.endsWith(".jpg")) return "image/jpeg";
+  else if(filename.endsWith(".ico")) return "image/x-icon";
+  else if(filename.endsWith(".xml")) return "text/xml";
+  else if(filename.endsWith(".pdf")) return "application/x-pdf";
+  else if(filename.endsWith(".zip")) return "application/x-zip";
+  else if(filename.endsWith(".gz")) return "application/x-gzip";
+  return "text/plain";
+}
+
+bool handleFileRead(String path){
+  Serial.println("handleFileRead: " + path);
+  if(path.endsWith("/")) path += "index.htm";
+  String contentType = getContentType(path);
+  String pathWithGz = path + ".gz";
+  if(SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)){
+    if(SPIFFS.exists(pathWithGz))
+      path += ".gz";
+    File file = SPIFFS.open(path, "r");
+    Serial.println("File opened: " + path);
+    size_t sent = webServer.streamFile(file, contentType);
+    file.close();
+    return true;
+  }
+  return false;
+}
 
 void mqtt_callback(char* topic, byte* payload, unsigned int length)
 {
@@ -80,6 +123,13 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length)
 
 }
 
+void filldynamicdata()
+{
+    String values ="";
+    values += "mydynamicdata|" + (String) + "This is my Dynamic Value" + "|div\n";   // Build a string, like this:  ID|VALUE|TYPE
+    webServer.send ( 200, "text/plain", values);
+}
+
 //callback notifying us of the need to save config
 void saveConfigCallback () {
         Serial.println("Should save config");
@@ -102,11 +152,22 @@ void reset_wifi_settings()
         delay(5000);
 }
 
-void handleRoot() {
-        webServer.send(200, "text/html", "<html> <p><a title=\"Reset settings to factory defaults\" href=\"reset_settings\">Reset settings to factory defaults </a></p> <p><a title=\"Reset settings to factory defaults\" href=\"update\">Update firmware </a></p></html>");
+void send_direct()
+{
+  //webServer.send(200, "text/plain", "Send");
+  Serial.println("Send");
+  dali.sendDirect(BROADCAST, 0, 199);
 }
 
+void handleRoot() {
+        handleFileRead("/index.html");
+}
+
+#define wakeup_pin 12
+
 void setup() {
+        pinMode(wakeup_pin, OUTPUT);
+        digitalWrite(wakeup_pin, HIGH);
         // put your setup code here, to run once:
         Serial.begin(115200);
         Serial.println();
@@ -151,8 +212,14 @@ void setup() {
                 Serial.println("failed to mount FS");
         }
         //end read
-
-
+        {
+          Dir dir = SPIFFS.openDir("/");
+              while (dir.next()) {
+                String fileName = dir.fileName();
+                size_t fileSize = dir.fileSize();
+                Serial.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
+          }
+        }
 
         // The extra parameters to be configured (can be either global or just in the setup)
         // After connecting, parameter.getValue() will get you the configured value
@@ -244,9 +311,9 @@ void setup() {
 
         ArduinoOTA.begin();
 
-        httpUpdater.setup(&webServer);
-        //mqttClient.setServer(mqtt_server, atoi(mqtt_port));
-        mqttClient.setServer("192.168.0.2", 1883);
+        //httpUpdater.setup(&webServer);
+        mqttClient.setServer(mqtt_server, atoi(mqtt_port));
+        //mqttClient.setServer("192.168.0.2", 1883);
         mqttClient.setCallback(mqtt_callback);
 
         char buffer[64];
@@ -256,7 +323,15 @@ void setup() {
         MDNS.begin(node_name);
 
         webServer.on("/reset_settings", reset_wifi_settings);
+        webServer.on("/send", send_direct);
         webServer.on("/", handleRoot);
+
+        webServer.on ( "/dynamic", filldynamicdata );
+
+        webServer.onNotFound([](){
+            if(!handleFileRead(webServer.uri()))
+              webServer.send(404, "text/plain", "FileNotFound");
+        });
 
         webServer.begin();
 

@@ -2,7 +2,7 @@
 #include "dali_encode.h"
 #include <Arduino.h>
 
-#define _PROGMEM
+#define _PROGMEM PROGMEM
 
 #define FALSE 0
 #define TRUE !0
