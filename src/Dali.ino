@@ -135,10 +135,12 @@ void setup() {
                                 json.printTo(Serial);
                                 if (json.success()) {
                                         Serial.println("\nparsed json");
-
-                                        strcpy(node_name, json["node_name"]);
-                                        strcpy(mqtt_server, json["mqtt_server"]);
-                                        strcpy(mqtt_port, json["mqtt_port"]);
+                                        if(json.containsKey("node_name"))
+                                          strcpy(node_name, json["node_name"]);
+                                        if(json.containsKey("mqtt_server"))
+                                          strcpy(mqtt_server, json["mqtt_server"]);
+                                        if(json.containsKey("mqtt_port"))
+                                          strcpy(mqtt_port, json["mqtt_port"]);
 
                                 } else {
                                         Serial.println("failed to load json config");
@@ -270,7 +272,7 @@ void mqtt_reconnect()
         {
                 Serial.println("MQTT connected");
 
-                sprintf(buffer, "%s/light", node_name);
+                sprintf(buffer, "%s/command", node_name);
                 mqttClient.subscribe(buffer);
         }
         else
