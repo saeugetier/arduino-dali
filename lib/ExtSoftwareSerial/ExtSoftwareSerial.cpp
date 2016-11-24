@@ -79,7 +79,7 @@ ExtSoftwareSerial::ExtSoftwareSerial(int receivePin, int transmitPin, bool inver
       if (m_buffer != NULL) {
          m_rxValid = true;
          m_inPos = m_outPos = 0;
-         pinMode(m_rxPin, INPUT);
+         pinMode(m_rxPin, INPUT_PULLUP);
          ObjList[m_rxPin] = this;
          enableRx(true);
       }
@@ -183,10 +183,14 @@ size_t ExtSoftwareSerial::write(uint16_t w) {
    if (m_invert) w = ~w;
    // Disable interrupts in order to get a clean transmit
    cli();
-   if (m_txEnableValid) digitalWrite(m_txEnablePin, HIGH);
    unsigned long wait = m_bitTime;
-   digitalWrite(m_txPin, HIGH);
+   digitalWrite(m_txPin, LOW);
    unsigned long start = ESP.getCycleCount();
+   WAIT;
+   if (m_txEnableValid) digitalWrite(m_txEnablePin, HIGH);
+   WAIT;
+   digitalWrite(m_txPin, HIGH);
+   WAIT;
     // Start bit;
     if(m_manchester)
     {
@@ -220,6 +224,9 @@ size_t ExtSoftwareSerial::write(uint16_t w) {
 
    // Stop bit
    digitalWrite(m_txPin, HIGH);
+   WAIT;
+   WAIT;
+   WAIT;
    WAIT;
    if (m_txEnableValid) digitalWrite(m_txEnablePin, LOW);
    sei();
