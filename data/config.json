@@ -1,0 +1,5 @@
+{
+  "mqtt_server":"192.168.0.2",
+  "mqtt_port":"1883",
+  "node_name":"licht2"
+}

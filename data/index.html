@@ -1,0 +1,18 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="microajax.js"></script>
+<html>
+	<head>
+	<title></title>
+	<meta charset="utf-8" />
+	</head>
+	<body>
+	<link rel="stylesheet" href="style.css" type="text/css" />
+	It work's!
+  <div id="mydynamicdata">Here comes the Dynamic Data in </div>   <!-- added a DIV, where the dynamic data goes to -->
+ <script>
+    setValues("/dynamic");  //-- this function calls the function on the ESP
+ </script>
+  <a href="/reset_settings">Factory default settings</a>
+	</body>
+</html>
