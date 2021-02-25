@@ -2,7 +2,7 @@
 #include "dali_encode.h"
 #include <Arduino.h>
 
-#define _PROGMEM PROGMEM
+#define _PROGMEM
 
 #define FALSE 0
 #define TRUE !0
@@ -363,7 +363,7 @@ int decode_command_to_frame(const char* token, uint16_t* output)
 																								{
 																																ret = dali_slave_command(output, (byte)param1, command_list[i].value);
 																																if(ret == _ERR_OK_)
-																																								return pgm_read_byte(command_list[i].mode);
+																																								return command_list[i].mode;
 																																else
 																																								return ret;
 																								}
